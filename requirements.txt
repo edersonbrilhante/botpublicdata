@@ -1,0 +1,6 @@
+Django==1.9.5
+django-extensions==1.6.1
+djangorestframework==3.3.3
+mongoengine==0.10.6
+lxml==3.6.0
+requests==2.9.1
