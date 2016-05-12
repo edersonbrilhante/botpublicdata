@@ -1,0 +1,9 @@
+*.pyc
+*.orig
+*.log
+.DS_Store
+*~
+\#*\#
+*.bak
+*.egg-info
+.vagrant*
