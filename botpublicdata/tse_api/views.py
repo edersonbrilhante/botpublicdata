@@ -1,3 +1,4 @@
+# -*- coding:utf-8 -*-
 from __future__ import unicode_literals
 
 import logging
@@ -18,4 +19,4 @@ class TesteView(APIView):
 
         party_bot = bots.PartyBot()
         party_bot.get_party_list()
-        return Response({}, status.HTTP_200_OK)
+        return Response({}, status.HTTP_200_OK	)
