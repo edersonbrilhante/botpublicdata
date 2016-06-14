@@ -121,7 +121,7 @@ USE_TZ = True
 STATIC_URL = '/static/'
 
 # Configuração do arquivo de log do projeto.
-BOTPUBLICDATA_DEBUG = os.getenv('BOTPUBLICDATA_DEBUG', '0')
+BOTPUBLICDATA_DEBUG = os.getenv('BOTPUBLICDATA_DEBUG', '0') == '1'
 
 LOG_FILE = os.getenv('BOTPUBLICDATA_LOG_FILE', '/tmp/botpublicdata.log')
 
@@ -148,7 +148,7 @@ LOGGING = {
             'mode': 'a',
         },
         'console': {
-            'level': 'INFO',
+            'level': LOG_LEVEL,
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
