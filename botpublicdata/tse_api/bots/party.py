@@ -10,12 +10,10 @@ import shutil
 import zipfile
 
 from lxml import etree, html
-import requests
 
 from tornado import gen, httpclient, queues
 from tornado.ioloop import IOLoop
 
-from tse_api.base import DocBase
 from tse_api.bots.connect import connect
 
 log = logging.getLogger(__name__)
@@ -24,12 +22,14 @@ log = logging.getLogger(__name__)
 class PartyBot(object):
 
     def get_party_list(self):
+        IOLoop.instance().run_sync(lambda: self._get_party_list())
+
+    @gen.coroutine
+    def _get_party_list(self):
         try:
             url = 'http://www.tse.jus.br/partidos/partidos-politicos/registrados-no-tse'
             http_client = httpclient.HTTPClient()
             response = http_client.fetch(url)
-        except httpclient.HTTPError as e:
-            log.error("Error: {}".format(e))
         except Exception as e:
             # Other errors are possible, such as IOError.
             log.error("Error: {}".format(e))
@@ -50,38 +50,29 @@ class PartyBot(object):
                 else:
                     try:
                         db = connect('tse_api')
-                        dc = DocBase(db, 'party')
-
                         siglas = tree.xpath('//div[@id="textoConteudo"]//*[tr]//*[a[@class="internal-link"]]')
                         for sigla in siglas:
                             # url = sigla[0].xpath('@href')[0].strip()
                             acronym = sigla.text_content().strip()
-                            party = IOLoop.instance().run_sync(lambda: dc.do_find_one({'acronym': acronym}))
+                            party = yield db.party.find_one({'acronym': acronym})
                             if not party:
                                 party = {
                                     'acronym': acronym
                                 }
-                                IOLoop.instance().run_sync(lambda: dc.do_save(party))
+                                yield db.party.insert(party)
 
                     except etree.XPathEvalError as details:
                         log.error('ERROR: XPath expression', details.error_log)
                     except Exception as e:
                         log.exception(e)
 
-    @gen.coroutine
-    def consumer(self, db, q):
-        while True:
-            if q.empty():
-                return
-            name, state = yield q.get()
-            try:
-                log.debug('consumer name: {} state: {}'.format(name, state))
-                yield self.get_affiliated(db, name, state)
-            finally:
-                q.task_done()
+    def get_affiliated_list(self):
+        q = queues.Queue()
+        IOLoop.instance().run_sync(lambda: self._get_affiliated_list(q))
 
     @gen.coroutine
-    def producer(self, db, q):
+    def _get_affiliated_list(self, q):
+        db = connect('tse_api')
         cursor = db.party.find()
         states_list = ['ac', 'al', 'am', 'ap', 'ba', 'ce', 'df', 'es', 'go', 'ma', 'mg', 'ms',
                        'mt', 'pa', 'pb', 'pe', 'pi', 'pr', 'rj', 'rn', 'ro', 'rr', 'rs', 'sc',
@@ -99,32 +90,28 @@ class PartyBot(object):
                     log.debug('producer name: {} state: {}'.format(name, state))
                     q.put((name, state))
 
-    @gen.coroutine
-    def _get_affiliated_list(self, db, q):
-        log.info(q)
-#        IOLoop.current().spawn_callback(lambda: self.consumer(q))
-        yield self.producer(db, q)
-        concurrency = 4
-        for _ in range(concurrency):
-            yield self.consumer(db, q)
-        # yield q.join()
-
-    def get_affiliated_list(self):
-        q = queues.Queue()
-        db = connect('tse_api')
-        IOLoop.current().run_sync(lambda: self._get_affiliated_list(db, q))
+        while True:
+            log.debug('queue empty')
+            if q.empty():
+                return
+            name, state = yield q.get()
+            yield self.get_affiliated(db, name, state)
+        yield q.join()
 
     @gen.coroutine
     def get_affiliated(self, db, name, state):
         try:
+            log.debug('get_affiliated name: {} state: {}'.format(name, state))
             url = 'http://agencia.tse.jus.br/estatistica/sead/eleitorado/filiados/uf/filiados_{}_{}.zip'.format(name, state)
 
-            request = requests.get(url)
-            z = zipfile.ZipFile(BytesIO(request.content))
+            http_client = httpclient.HTTPClient()
+            response = http_client.fetch(url)
+            z = zipfile.ZipFile(BytesIO(response.body))
             z.extractall('/tmp/{}_{}'.format(name, state))
         except Exception as e:
             log.error('{},{},{}'.format(name, state, e))
         else:
+            http_client.close()
             try:
                 file_name = '/tmp/{0}_{1}/aplic/sead/lista_filiados/uf/filiados_{0}_{1}.csv'.format(name, state)
 
@@ -184,7 +171,7 @@ class PartyBot(object):
                             if len(affiliations) > 10000:
                                 yield coll.insert(affiliations)
                                 affiliations = list()
-                        if affiliations:
+                        if len(affiliations) > 0:
                             yield coll.insert(affiliations)
 
             except Exception as e:
