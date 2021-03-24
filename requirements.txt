@@ -1,6 +1,6 @@
 Django==1.9.5
 django-extensions==1.6.1
-djangorestframework==3.3.3
+djangorestframework==3.11.2
 motor==0.6
 lxml==3.6.0
 requests==2.10.0
